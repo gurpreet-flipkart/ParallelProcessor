@@ -12,6 +12,6 @@ public interface ISource<T> extends Component {
 
     void pipe(ISink<T> next);
 
-    <Y extends Key> Connector<T, Y> pipe(Connector<T, Y> next);
+    <Y> Connector<T, Y> pipe(Connector<T, Y> next);
 
 }

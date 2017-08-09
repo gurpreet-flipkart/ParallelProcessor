@@ -2,6 +2,7 @@ package org.learning.parallelprocessor.framework;
 
 
 import org.learning.parallelprocessor.framework.connector.Connector;
+import org.learning.parallelprocessor.framework.connector.Processor;
 import org.learning.parallelprocessor.framework.merger.Key;
 
 import java.util.Iterator;
@@ -11,13 +12,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class Source<T> implements ISource<T> {
 
     private Iterator<T> iterator;
-    private Class<T> clazz;
 
-    private BlockingQueue<T> outputQueue = new LinkedBlockingQueue<>();
+    private BlockingQueue outputQueue = new LinkedBlockingQueue<>();
 
-    public Source(Iterator<T> iterator, Class<T> clazz) {
+    public Source(Iterator<T> iterator) {
         this.iterator = iterator;
-        this.clazz = clazz;
     }
 
     @Override
@@ -25,12 +24,12 @@ public class Source<T> implements ISource<T> {
         next.setInputQueue(this.getOutputQueue());
     }
 
-    public <Y extends Key> Connector<T, Y> pipe(Connector<T, Y> next) {
+    public <Y> Connector<T, Y> pipe(Connector<T, Y> next) {
         next.setInputQueue(this.getOutputQueue());
         return next;
     }
 
-    public void start() throws Exception {
+    public void run() {
         while (iterator.hasNext()) {
             T next = iterator.next();
             try {
@@ -42,11 +41,10 @@ public class Source<T> implements ISource<T> {
         }
         try {
             System.out.println("Source Added Poison bill");
-            outputQueue.put(clazz.newInstance());
+            outputQueue.put(Processor.POISON_PILL);
         } catch (Exception e) {
             e.printStackTrace();
         }
-        System.out.println("Started ");
     }
 
     @Override

@@ -1,6 +1,7 @@
 package org.learning.parallelprocessor.framework;
 
 
+import org.learning.parallelprocessor.framework.connector.Processor;
 import org.learning.parallelprocessor.framework.merger.Key;
 import org.learning.parallelprocessor.framework.merger.Merger;
 
@@ -8,7 +9,7 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Future;
 
-public class Sink<T extends Key> implements ISink<T> {
+public class Sink<T> implements ISink<T> {
     private BlockingQueue<T> inputQueue = null;
     private Merger<T> merger;
 
@@ -18,12 +19,12 @@ public class Sink<T extends Key> implements ISink<T> {
 
     private Future<Map<String, T>> submitted = null;
 
-    public void start() throws Exception {
+    public void run(){
         submitted = ThreadPool.submit(() -> {
             Map<String, T> output = null;
             while (true) {
                 T partialOutput = inputQueue.take();
-                if (partialOutput.getKey() == null) {
+                if (partialOutput == Processor.POISON_PILL) {
                     break;
                 }
                 output = merger.merge(partialOutput);

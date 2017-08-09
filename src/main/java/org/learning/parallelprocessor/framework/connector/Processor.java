@@ -2,8 +2,6 @@ package org.learning.parallelprocessor.framework.connector;
 
 
 import org.learning.parallelprocessor.framework.ISink;
-import org.learning.parallelprocessor.framework.ProgressMonitor;
-import org.learning.parallelprocessor.framework.merger.Key;
 import org.learning.parallelprocessor.framework.merger.Splitable;
 import org.learning.parallelprocessor.framework.step.*;
 import org.learning.parallelprocessor.framework.task.ListMapTask;
@@ -22,13 +20,12 @@ import java.util.function.Consumer;
 import static org.learning.parallelprocessor.framework.Launcher.THREADPRINT;
 import static org.learning.parallelprocessor.framework.ThreadPool.async;
 
-public class Processor<Instance extends Key, Output> implements Connector<Instance, Output> {
+public class Processor<Instance, Output> implements Connector<Instance, Output> {
+    public static final Object POISON_PILL = new Object();
     private Step<Instance, Output> task;
-    private Class<Output> clazz;
     private int batchSize;
-    protected final ProgressMonitor progressMonitor = new ProgressMonitor();
-    private BlockingQueue<Output> outputQueue = new LinkedBlockingQueue<>();
-    private BlockingQueue<Instance> inputQueue;
+    private BlockingQueue outputQueue = new LinkedBlockingQueue<>();
+    private BlockingQueue inputQueue;
     private AtomicInteger submittedBatched = new AtomicInteger(0);
 
     /*
@@ -36,26 +33,22 @@ public class Processor<Instance extends Key, Output> implements Connector<Instan
     * where p = degree of parallelism.
     * f is the cost of non parallelizable work.
     * */
-    public Processor(ListMapping<Instance, Output> computation, Class<Output> clazz, int batchSize) {
+    public Processor(ListMapping<Instance, Output> computation, int batchSize) {
         this.task = computation;
-        this.clazz = clazz;
         this.batchSize = batchSize;
     }
 
-    public Processor(Reduction<Instance, Output> computation, Class<Output> clazz, int batchSize) {
+    public Processor(Reduction<Instance, Output> computation, int batchSize) {
         this.task = computation;
-        this.clazz = clazz;
         this.batchSize = batchSize;
     }
 
-    public Processor(Mapping<Instance, Output> task, Class<Output> clazz) {
+    public Processor(Mapping<Instance, Output> task) {
         this.task = task;
-        this.clazz = clazz;
     }
 
-    public Processor(StreamStep<Instance, Output> task, Class<Output> clazz) {
+    public Processor(StreamStep<Instance, Output> task) {
         this.task = task;
-        this.clazz = clazz;
     }
 
 
@@ -92,67 +85,73 @@ public class Processor<Instance extends Key, Output> implements Connector<Instan
             int count = submittedBatched.decrementAndGet();
             System.out.println("Remaining Tasks :" + count);
             if (count == 0 && isDone.get()) {
-                outputQueue.put(this.clazz.newInstance());
-                System.out.println("Added Poison Pill");
+                outputQueue.put(POISON_PILL);
+                System.out.println("Processor Added Poison Pill");
             }
         }
     }
 
 
-    public void start() throws Exception {
-        if (task instanceof Mapping || task instanceof StreamStep) {
-            while (!Thread.currentThread().isInterrupted()) {
-                Instance si = inputQueue.take();
-                if (si.getKey() == null) {
-                    break;
-                }
-                if (task instanceof Mapping) {
-                    if (this.clazz == Void.class) {
-                        async(new ReduceTask<>(() -> ((Mapping<Instance, Output>) task).process(si), x -> {
-                        }));
-                    } else {
-                        async(new ReduceTask<>(() -> ((Mapping<Instance, Output>) task).process(si), iPublisher));
+    public void run() {
+        try {
+            if (task instanceof Mapping || task instanceof StreamStep) {
+                while (!Thread.currentThread().isInterrupted()) {
+                    Object instance = inputQueue.take();
+                    if (instance == POISON_PILL) {
+                        break;
                     }
-                } else {
-                    async(() -> {
-                        try {
-                            //to be fixed.
-                            ((StreamStep) task).process(si, outputQueue);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            //TODO how to handle this scenario gracefully.
+                    Instance si = (Instance) instance;
+                    if (task instanceof Mapping) {
+                        if (false) {
+                            async(new ReduceTask<>(() -> ((Mapping<Instance, Output>) task).process(si), x -> {
+                            }));
+                        } else {
+                            async(new ReduceTask<>(() -> ((Mapping<Instance, Output>) task).process(si), iPublisher));
                         }
-                    });
-                }
-                submittedBatched.incrementAndGet();
-                submittedInstances += 1;
-                THREADPRINT.println("Submitted "+submittedBatched.get()+" batches with "+submittedInstances +" instances");
-            }
-        } else {
-            final List<Instance> batch = new LinkedList<>();
-            while (!Thread.currentThread().isInterrupted()) {
-                Instance si = inputQueue.take();
-                if (si.getKey() == null) {
-                    if (!batch.isEmpty()) {
-                        work(batch);
+                    } else {
+                        async(() -> {
+                            try {
+                                //to be fixed.
+                                ((StreamStep) task).process(si, outputQueue);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                                //TODO how to handle this scenario gracefully.
+                            }
+                        });
                     }
-                    break;
+                    submittedBatched.incrementAndGet();
+                    submittedInstances += 1;
+                    THREADPRINT.println("Submitted " + submittedBatched.get() + " batches with " + submittedInstances + " instances");
                 }
-                if (si instanceof Splitable) {
-                    List<Instance> splits = ((Splitable<Instance>) (si)).split(4000);
-                    for (Instance i : splits) {
-                        batch.add(i);
+            } else {
+                final List<Instance> batch = new LinkedList<>();
+                while (!Thread.currentThread().isInterrupted()) {
+                    Object instance = inputQueue.take();
+                    if (instance == POISON_PILL) {
+                        if (!batch.isEmpty()) {
+                            work(batch);
+                        }
+                        break;
+                    }
+                    Instance si = (Instance) instance;
+                    if (si instanceof Splitable) {
+                        List<Instance> splits = ((Splitable<Instance>) (si)).split(4000);
+                        for (Instance i : splits) {
+                            batch.add(i);
+                            submit(batch);
+                        }
+                    } else {
+                        batch.add(si);
                         submit(batch);
                     }
-                } else {
-                    batch.add(si);
-                    submit(batch);
-                }
 
+                }
             }
+            System.out.println("Am Done");
+            isDone.set(true);
+        } catch (InterruptedException ex) {
+            ex.printStackTrace();
         }
-        System.out.println("Am Done");
-        isDone.set(true);
     }
 
     private void submit(List<Instance> batch) {
@@ -166,22 +165,22 @@ public class Processor<Instance extends Key, Output> implements Connector<Instan
         async(getTask(new ArrayList<>(batch)));
         submittedBatched.incrementAndGet();
         submittedInstances += batch.size();
-        THREADPRINT.println("Submitted "+submittedBatched.get()+" batches with "+submittedInstances +" instances");
+        THREADPRINT.println("Submitted " + submittedBatched.get() + " batches with " + submittedInstances + " instances");
         batch.clear();
     }
 
     private Task getTask(ArrayList<Instance> copy) {
         if (task instanceof Reduction) {
-            if (this.clazz == Void.class) {
+            /*if (this.clazz == Void.class) {
                 return new ReduceTask<>(() -> ((Reduction<Instance, Output>) task).process(copy), x -> {
                 });
-            }
+            }*/
             return new ReduceTask<>(() -> ((Reduction<Instance, Output>) task).process(copy), iPublisher);
         } else if (task instanceof ListMapping) {
-            if (this.clazz == Void.class) {
+            /*if (this.clazz == Void.class) {
                 return new ListMapTask<>(() -> ((ListMapping) task).process(copy), x -> {
                 });
-            }
+            }*/
             return new ListMapTask<>(() -> ((ListMapping) task).process(copy), listPublisher);
         }
         return null;
@@ -192,7 +191,7 @@ public class Processor<Instance extends Key, Output> implements Connector<Instan
         next.setInputQueue(this.getOutputQueue());
     }
 
-    public <Y extends Key> Connector<Output, Y> pipe(Connector<Output, Y> next) {
+    public <Y> Connector<Output, Y> pipe(Connector<Output, Y> next) {
         next.setInputQueue(this.getOutputQueue());
         return next;
     }
