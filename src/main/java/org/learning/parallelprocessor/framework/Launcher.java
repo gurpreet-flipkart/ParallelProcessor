@@ -1,29 +1,19 @@
 package org.learning.parallelprocessor.framework;
 
 
-import java.util.concurrent.TimeUnit;
-
-import static org.learning.parallelprocessor.framework.ThreadPool.async;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Launcher {
     public static final ThreadPrintStream THREADPRINT = new ThreadPrintStream(System.out);
+
     public static void launch(Component... components) throws InterruptedException {
+        ExecutorService executorService = Executors.newCachedThreadPool();
         for (Component c : components) {
-            try {
-                if (c instanceof ISink) {
-                    c.run();
-                } else {
-                    async(() -> {
-                        try {
-                            c.run();
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    });
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                break;
+            if (c instanceof ISink) {
+                c.run();
+            } else {
+                executorService.submit(c);
             }
         }
         //TODO implement stop() method.

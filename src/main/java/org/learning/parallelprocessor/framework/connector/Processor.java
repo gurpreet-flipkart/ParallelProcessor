@@ -1,32 +1,35 @@
 package org.learning.parallelprocessor.framework.connector;
 
 
+import com.google.common.collect.ImmutableList;
 import org.learning.parallelprocessor.framework.ISink;
 import org.learning.parallelprocessor.framework.merger.Splitable;
-import org.learning.parallelprocessor.framework.step.*;
-import org.learning.parallelprocessor.framework.task.ListMapTask;
-import org.learning.parallelprocessor.framework.task.ReduceTask;
-import org.learning.parallelprocessor.framework.task.Task;
+import org.learning.parallelprocessor.framework.step.ListMapping;
+import org.learning.parallelprocessor.framework.step.Mapping;
+import org.learning.parallelprocessor.framework.step.Reduction;
+import org.learning.parallelprocessor.framework.step.StreamStep;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.learning.parallelprocessor.framework.Launcher.THREADPRINT;
-import static org.learning.parallelprocessor.framework.ThreadPool.async;
 
 public class Processor<Instance, Output> implements Connector<Instance, Output> {
     public static final Object POISON_PILL = new Object();
-    private Step<Instance, Output> task;
+    private ListMapping<Instance, Output> task;
     private int batchSize;
     private BlockingQueue outputQueue = new LinkedBlockingQueue<>();
     private BlockingQueue inputQueue;
     private AtomicInteger submittedBatched = new AtomicInteger(0);
+    ExecutorService pool = Executors.newCachedThreadPool();
 
     /*
     * speedUp 1/(f+(1-f)/p)
@@ -39,86 +42,57 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
     }
 
     public Processor(Reduction<Instance, Output> computation, int batchSize) {
-        this.task = computation;
+        this.task = transform(computation);
         this.batchSize = batchSize;
     }
 
-    public Processor(Mapping<Instance, Output> task) {
-        this.task = task;
+    private ListMapping<Instance, Output> transform(Reduction<Instance, Output> reduction) {
+        return ts -> ImmutableList.of(reduction.process(ts));
     }
 
-    public Processor(StreamStep<Instance, Output> task) {
-        this.task = task;
+    private ListMapping<Instance, Output> transform(Mapping<Instance, Output> mapping) {
+        return ts -> ImmutableList.of(mapping.process(ts.get(0)));
     }
+
+    public Processor(Mapping<Instance, Output> task) {
+        this.task = transform(task);
+        this.batchSize = 1;
+    }
+
+    //public Processor(StreamStep<Instance, Output> task) {
+    //this.task = task;
+    //}
 
 
     int submittedInstances = 0;
     private final AtomicBoolean isDone = new AtomicBoolean(false);
 
-    private Consumer<Output> iPublisher = (Output o) -> {
-        try {
-            if (o != null) {
-                outputQueue.put(o);
-            }
-            lockAndDo();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    };
-
-
-    private Consumer<List<Output>> listPublisher = (List<Output> output) -> {
-        try {
-            if (output != null) {
-                for (Output o : output) {
-                    outputQueue.put(o);
-                }
-            }
-            lockAndDo();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    };
-
     private void lockAndDo() throws Exception {
         synchronized (submittedBatched) {
-            int count = submittedBatched.decrementAndGet();
-            System.out.println("Remaining Tasks :" + count);
-            if (count == 0 && isDone.get()) {
-                outputQueue.put(POISON_PILL);
-                System.out.println("Processor Added Poison Pill");
-            }
+            submittedBatched.decrementAndGet();
+            stop();
         }
     }
 
 
     public void run() {
         try {
-            if (task instanceof Mapping || task instanceof StreamStep) {
+            if (task instanceof StreamStep) {
                 while (!Thread.currentThread().isInterrupted()) {
                     Object instance = inputQueue.take();
                     if (instance == POISON_PILL) {
                         break;
                     }
                     Instance si = (Instance) instance;
-                    if (task instanceof Mapping) {
-                        if (false) {
-                            async(new ReduceTask<>(() -> ((Mapping<Instance, Output>) task).process(si), x -> {
-                            }));
-                        } else {
-                            async(new ReduceTask<>(() -> ((Mapping<Instance, Output>) task).process(si), iPublisher));
+                    pool.submit(() -> {
+                        try {
+                            //to be fixed.
+                            ((StreamStep) task).process(si, outputQueue);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            //TODO how to handle this scenario gracefully.
                         }
-                    } else {
-                        async(() -> {
-                            try {
-                                //to be fixed.
-                                ((StreamStep) task).process(si, outputQueue);
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                                //TODO how to handle this scenario gracefully.
-                            }
-                        });
-                    }
+                    });
                     submittedBatched.incrementAndGet();
                     submittedInstances += 1;
                     THREADPRINT.println("Submitted " + submittedBatched.get() + " batches with " + submittedInstances + " instances");
@@ -147,10 +121,18 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
 
                 }
             }
-            System.out.println("Am Done");
             isDone.set(true);
+            stop();
         } catch (InterruptedException ex) {
             ex.printStackTrace();
+        }
+    }
+
+    private void stop() throws InterruptedException {
+        System.out.println("Remaining Tasks :" + submittedBatched.get());
+        if (submittedBatched.get() == 0 && isDone.get()) {
+            outputQueue.put(POISON_PILL);
+            System.out.println("Processor Added Poison Pill");
         }
     }
 
@@ -162,29 +144,35 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
 
 
     private void work(List<Instance> batch) {
-        async(getTask(new ArrayList<>(batch)));
+        pool.submit(getTask(new ArrayList<>(batch)));
         submittedBatched.incrementAndGet();
         submittedInstances += batch.size();
         THREADPRINT.println("Submitted " + submittedBatched.get() + " batches with " + submittedInstances + " instances");
         batch.clear();
     }
 
-    private Task getTask(ArrayList<Instance> copy) {
-        if (task instanceof Reduction) {
-            /*if (this.clazz == Void.class) {
-                return new ReduceTask<>(() -> ((Reduction<Instance, Output>) task).process(copy), x -> {
-                });
-            }*/
-            return new ReduceTask<>(() -> ((Reduction<Instance, Output>) task).process(copy), iPublisher);
-        } else if (task instanceof ListMapping) {
-            /*if (this.clazz == Void.class) {
-                return new ListMapTask<>(() -> ((ListMapping) task).process(copy), x -> {
-                });
-            }*/
-            return new ListMapTask<>(() -> ((ListMapping) task).process(copy), listPublisher);
-        }
-        return null;
+    private Runnable getTask(ArrayList<Instance> list) {
+        return endAwareStep.apply(task).apply(list);
     }
+
+    private Function<ListMapping<Instance, Output>, Function<List<Instance>, Runnable>> endAwareStep = step -> (List<Instance> instance) -> () -> {
+        try {
+            try {
+                List<Output> output = step.process(instance);
+                if (output != null) {
+                    for (Output o : output) {
+                        outputQueue.put(o);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Batch Failed due to :");
+                e.printStackTrace();
+            }
+            lockAndDo();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    };
 
     @Override
     public void pipe(ISink<Output> next) {

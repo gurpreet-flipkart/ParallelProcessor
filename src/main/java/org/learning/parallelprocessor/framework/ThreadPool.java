@@ -9,15 +9,7 @@ import java.util.function.Supplier;
 public interface ThreadPool {
     ExecutorService taskExecutor = Executors.newFixedThreadPool(40);
 
-    static <T> Future<T> async(Supplier<T> supplier) {
-        return ThreadPool.taskExecutor.submit(() -> supplier.get());
-    }
-
     static <T> Future<T> submit(Callable<T> callable) {
         return taskExecutor.submit(callable);
-    }
-
-    static void async(Runnable callable) {
-        taskExecutor.execute(callable);
     }
 }

@@ -16,6 +16,12 @@ public class JMerger<T> implements Merger<T> {
         this.merger = merger;
     }
 
+
+    public JMerger(BiFunction<T, T, T> merger) {
+        this.keyFunction = s -> "k";
+        this.merger = merger;
+    }
+
     @Override
     public Map<String, T> merge(T partialOutput) {
         String key = keyFunction.apply(partialOutput).toString();
