@@ -29,7 +29,7 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
     private BlockingQueue outputQueue = new LinkedBlockingQueue<>();
     private BlockingQueue inputQueue;
     private AtomicInteger submittedBatched = new AtomicInteger(0);
-    ExecutorService pool = Executors.newCachedThreadPool();
+    private final ExecutorService pool = Executors.newCachedThreadPool();
 
     /*
     * speedUp 1/(f+(1-f)/p)
