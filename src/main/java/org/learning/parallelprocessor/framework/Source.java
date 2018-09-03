@@ -47,7 +47,6 @@ public class Source<T> implements ISource<T> {
         }
     }
 
-    @Override
     public BlockingQueue<T> getOutputQueue() {
         return outputQueue;
     }

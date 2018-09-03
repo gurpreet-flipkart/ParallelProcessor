@@ -8,8 +8,6 @@ import java.util.concurrent.BlockingQueue;
 
 public interface ISource<T> extends Component {
 
-    BlockingQueue<T> getOutputQueue();
-
     void pipe(ISink<T> next);
 
     <Y> Connector<T, Y> pipe(Connector<T, Y> next);

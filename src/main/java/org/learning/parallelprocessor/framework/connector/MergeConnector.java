@@ -19,7 +19,7 @@ public class MergeConnector<T> extends Sink<T> implements Connector<T, T> {
     BlockingQueue outputQueue = new LinkedBlockingQueue<>();
 
 
-    @Override
+
     public BlockingQueue<T> getOutputQueue() {
         return outputQueue;
     }

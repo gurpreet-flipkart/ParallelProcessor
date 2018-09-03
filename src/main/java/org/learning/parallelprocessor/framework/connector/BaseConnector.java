@@ -26,7 +26,7 @@ public abstract class BaseConnector<Instance, Output> implements Connector<Insta
         this.inputQueue = inputQueue;
     }
 
-    @Override
+
     public BlockingQueue<Output> getOutputQueue() {
         return outputQueue;
     }

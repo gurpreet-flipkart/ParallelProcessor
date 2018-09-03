@@ -190,7 +190,6 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
         this.inputQueue = inputQueue;
     }
 
-    @Override
     public BlockingQueue<Output> getOutputQueue() {
         return outputQueue;
     }
