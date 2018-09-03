@@ -25,7 +25,7 @@ public class SimpleSink<T> implements ISink<T> {
     }
 
     @Override
-    public void setInputQueue(BlockingQueue<T> queue) {
+    public void setInput(BlockingQueue<T> queue) {
         this.blockingQueue = queue;
     }
 

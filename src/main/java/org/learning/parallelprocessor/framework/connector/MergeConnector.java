@@ -27,11 +27,11 @@ public class MergeConnector<T> extends Sink<T> implements Connector<T, T> {
 
     @Override
     public void pipe(ISink<T> next) {
-        next.setInputQueue(this.getOutputQueue());
+        next.setInput(this.getOutputQueue());
     }
 
     public <Y> Connector<T, Y> pipe(Connector<T, Y> next) {
-        next.setInputQueue(this.getOutputQueue());
+        next.setInput(this.getOutputQueue());
         return next;
     }
 

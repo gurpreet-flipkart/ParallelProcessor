@@ -32,10 +32,10 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
     private final ExecutorService pool = Executors.newCachedThreadPool();
 
     /*
-    * speedUp 1/(f+(1-f)/p)
-    * where p = degree of parallelism.
-    * f is the cost of non parallelizable work.
-    * */
+     * speedUp 1/(f+(1-f)/p)
+     * where p = degree of parallelism.
+     * f is the cost of non parallelizable work.
+     * */
     public Processor(ListMapping<Instance, Output> computation, int batchSize) {
         this.task = computation;
         this.batchSize = batchSize;
@@ -107,17 +107,8 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
                         }
                         break;
                     }
-                    Instance si = (Instance) instance;
-                    if (si instanceof Splitable) {
-                        List<Instance> splits = ((Splitable<Instance>) (si)).split(4000);
-                        for (Instance i : splits) {
-                            batch.add(i);
-                            submit(batch);
-                        }
-                    } else {
-                        batch.add(si);
-                        submit(batch);
-                    }
+                    batch.add((Instance) instance);
+                    submit(batch);
 
                 }
             }
@@ -176,17 +167,17 @@ public class Processor<Instance, Output> implements Connector<Instance, Output> 
 
     @Override
     public void pipe(ISink<Output> next) {
-        next.setInputQueue(this.getOutputQueue());
+        next.setInput(this.getOutputQueue());
     }
 
     public <Y> Connector<Output, Y> pipe(Connector<Output, Y> next) {
-        next.setInputQueue(this.getOutputQueue());
+        next.setInput(this.getOutputQueue());
         return next;
     }
 
 
     @Override
-    public void setInputQueue(BlockingQueue<Instance> inputQueue) {
+    public void setInput(BlockingQueue<Instance> inputQueue) {
         this.inputQueue = inputQueue;
     }
 

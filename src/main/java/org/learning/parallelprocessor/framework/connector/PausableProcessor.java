@@ -1,6 +1,7 @@
 package org.learning.parallelprocessor.framework.connector;
 
 import org.learning.parallelprocessor.framework.Engine;
+import org.learning.parallelprocessor.framework.ISink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,7 +12,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
-public class PausableProcessor<T, V> extends BaseConnector<T, V> implements Engine {
+public class PausableProcessor<T, V> implements Engine, Connector<T, V> {
     private static final Logger logger =
             LoggerFactory.getLogger(PausableProcessor.class);
     private final Thread thread;
@@ -30,6 +31,26 @@ public class PausableProcessor<T, V> extends BaseConnector<T, V> implements Engi
         this.upgradableQueue = upgradableQueue;
         thread = new Thread(() -> run(), name);
         this.name = name;
+    }
+
+    public BlockingQueue<V> getOutputQueue() {
+        return outputQueue;
+    }
+
+    @Override
+    public void setInput(BlockingQueue<T> inputQueue) {
+        this.inputQueue = inputQueue;
+    }
+
+    @Override
+    public void pipe(ISink<V> next) {
+        next.setInput(this.getOutputQueue());
+    }
+
+    @Override
+    public <Y> Connector<V, Y> pipe(Connector<V, Y> next) {
+        next.setInput(this.getOutputQueue());
+        return next;
     }
 
 

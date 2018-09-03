@@ -3,7 +3,6 @@ package org.learning.parallelprocessor.framework;
 
 import org.learning.parallelprocessor.framework.connector.Connector;
 import org.learning.parallelprocessor.framework.connector.Processor;
-import org.learning.parallelprocessor.framework.merger.Key;
 
 import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
@@ -21,11 +20,11 @@ public class Source<T> implements ISource<T> {
 
     @Override
     public void pipe(ISink<T> next) {
-        next.setInputQueue(this.getOutputQueue());
+        next.setInput(this.getOutputQueue());
     }
 
     public <Y> Connector<T, Y> pipe(Connector<T, Y> next) {
-        next.setInputQueue(this.getOutputQueue());
+        next.setInput(this.getOutputQueue());
         return next;
     }
 
